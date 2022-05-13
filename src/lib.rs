@@ -1,11 +1,12 @@
-use std::any::Any;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::fmt::Formatter;
+use serde_derive::Serialize;
 
 #[cfg(feature = "time")]
 use chrono::{DateTime, Utc};
+use serde_json::{Number, Value};
 #[cfg(feature = "err_id")]
 use uuid::Uuid;
 
@@ -40,14 +41,14 @@ use uuid::Uuid;
 /// all object fields are `pub`. However, for the
 /// sake of convenience, object construction may
 /// be done via [builder](Builder).
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct ErrorObj {
 
     pub status: u16,
     pub message: String,
     pub short_message: Option<String>,
     pub error_code: Option<String>,
-    pub details: HashMap<String, Box<dyn Any>>,
+    pub details: HashMap<String, Value>,
     pub reference: Option<String>,
 
     #[cfg(feature = "time")]
@@ -56,6 +57,7 @@ pub struct ErrorObj {
     #[cfg(feature = "err_id")]
     pub id: Uuid,
 
+    #[serde(skip_serializing)]
     pub tags: Vec<String>
 
 }
@@ -108,7 +110,7 @@ pub struct Builder {
     message: String,
     short_message: Option<String>,
     error_code: Option<String>,
-    details: HashMap<String, Box<dyn Any>>,
+    details: HashMap<String, Value>,
     reference: Option<String>,
 
     #[cfg(feature = "time")]
@@ -187,7 +189,10 @@ impl Builder {
     /// }
     /// ```
     pub fn add_text_detail(mut self, name: String, value: String) -> Builder {
-        self.details.insert(name, Box::new(value));
+        self.details.insert(
+            name,
+            Value::String(value)
+        );
         self
     }
 
@@ -215,7 +220,10 @@ impl Builder {
     /// }
     /// ```
     pub fn add_int_detail(mut self, name: String, value: i64) -> Builder {
-        self.details.insert(name, Box::new(value));
+        self.details.insert(
+            name,
+            Value::Number(Number::from(value))
+        );
         self
     }
 
@@ -243,7 +251,10 @@ impl Builder {
     /// }
     /// ```
     pub fn add_bool_detail(mut self, name: String, value: bool) -> Builder {
-        self.details.insert(name, Box::new(value));
+        self.details.insert(
+            name,
+            Value::Bool(value)
+        );
         self
     }
 
@@ -254,15 +265,18 @@ impl Builder {
     ///
     /// For instance,
     /// ```rust
+    /// use std::collections::HashMap;
     /// use terror::Builder;
+    /// use serde_derive::Serialize;
+    /// use serde_json::{json, Number, Value};
+    ///
     /// let built = Builder::new(500, String::from("generic error"))
-    ///     .add_any_detail(
+    ///     .add_value_detail(
     ///         String::from("object"),
-    ///         SampleStruct {
-    ///             id: 94i32,
-    ///             name: String::from("server"),
-    ///             up: false
-    ///         }
+    ///         Value::from(json!({
+    ///             "id" : 94,
+    ///             "name" : "server"
+    ///         }))
     ///     )
     ///     .build();
     /// ```
@@ -276,14 +290,16 @@ impl Builder {
     ///     "details" : {
     ///         "object" : {
     ///             "id" : 94,
-    ///             "name" : "server",
-    ///             "up" : false
+    ///             "name" : "server"
     ///         }
     ///     }
     /// }
     /// ```
-    pub fn add_any_detail(mut self, name: String, value: Box<dyn Any>) -> Builder {
-        self.details.insert(name, value);
+    pub fn add_value_detail(mut self, name: String, value: Value) -> Builder {
+        self.details.insert(
+            name,
+            value
+        );
         self
     }
 
@@ -312,7 +328,7 @@ impl Builder {
             message: self.message.clone(),
             short_message: self.short_message.clone(),
             error_code: self.error_code.clone(),
-            details: self.details,
+            details:self.details,
             reference: self.reference.clone(),
             tags: self.tags.clone(),
 
@@ -326,7 +342,6 @@ impl Builder {
 
 }
 
-
 const MDN_STATUS_REF: &str = "https://developer.mozilla.org/en-US/docs/Web/HTTP/Status";
 
 #[cfg(test)]
@@ -334,6 +349,7 @@ mod no_feature_test {
     use std::error::Error;
     use std::fmt;
     use std::fmt::Formatter;
+    use serde_json::{json, Value};
     use crate::{Builder, MDN_STATUS_REF};
 
     #[test]
@@ -475,10 +491,8 @@ mod no_feature_test {
         assert_eq!(1, built.details.len());
         assert!(built.details.get("key").is_some());
         assert_eq!(
-            String::from("val"),
+            Value::String(String::from("val")),
             *built.details.get("key")
-                .unwrap()
-                .downcast_ref::<String>()
                 .unwrap()
         );
     }
@@ -499,10 +513,8 @@ mod no_feature_test {
         assert_eq!(1, built.details.len());
         assert!(built.details.get("key").is_some());
         assert_eq!(
-            53i64,
+            Value::from(53i64),
             *built.details.get("key")
-                .unwrap()
-                .downcast_ref::<i64>()
                 .unwrap()
         );
     }
@@ -523,10 +535,8 @@ mod no_feature_test {
         assert_eq!(1, built.details.len());
         assert!(built.details.get("key").is_some());
         assert_eq!(
-            true,
+            Value::Bool(true),
             *built.details.get("key")
-                .unwrap()
-                .downcast_ref::<bool>()
                 .unwrap()
         );
     }
@@ -537,28 +547,18 @@ mod no_feature_test {
             404,
             String::from("generic error")
         )
-            .add_any_detail(
+            .add_value_detail(
                 String::from("key"),
-                Box::new(TestStruct {
-                    int_field: 25,
-                    str_field: String::from("val")
-                })
+                Value::from(json!({
+                    "id" : 25,
+                    "name" : "server"
+                }))
             )
             .build();
 
         assert!(!built.details.is_empty());
         assert_eq!(1, built.details.len());
         assert!(built.details.get("key").is_some());
-        assert_eq!(
-            TestStruct {
-                int_field: 25,
-                str_field: String::from("val")
-            },
-            *built.details.get("key")
-                .unwrap()
-                .downcast_ref::<TestStruct>()
-                .unwrap()
-        );
     }
 
     #[test]
@@ -567,13 +567,6 @@ mod no_feature_test {
             404,
             String::from("generic error")
         )
-            .add_any_detail(
-                String::from("obj"),
-                Box::new(TestStruct {
-                    int_field: 25,
-                    str_field: String::from("val")
-                })
-            )
             .add_text_detail(
                 String::from("str"),
                 String::from("val")
@@ -590,8 +583,7 @@ mod no_feature_test {
 
 
         assert!(!built.details.is_empty());
-        assert_eq!(4, built.details.len());
-        assert!(built.details.contains_key("obj"));
+        assert_eq!(3, built.details.len());
         assert!(built.details.contains_key("str"));
         assert!(built.details.contains_key("num"));
         assert!(built.details.contains_key("flg"));
@@ -607,12 +599,6 @@ mod no_feature_test {
     }
 
     impl Error for TestError {}
-
-    #[derive(Debug, Eq, PartialEq)]
-    struct TestStruct {
-        int_field: i32,
-        str_field: String
-    }
 
 }
 
