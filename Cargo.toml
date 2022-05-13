@@ -9,6 +9,8 @@ keywords = ["rest", "error", "json"]
 readme = "README.md"
 homepage = "https://github.com/artkonr/terror"
 
+exclude = ["/ci", ".github"]
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
