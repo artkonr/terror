@@ -1,7 +1,13 @@
 [package]
 name = "terror"
-version = "0.1.0"
+description = "Uniform REST error response body, tailored for JSON"
+version = "0.1.1"
 edition = "2021"
+rust-version = "1.60"
+license = "MIT"
+keywords = ["rest", "error", "json"]
+readme = "README.md"
+homepage = "https://github.com/artkonr/terror"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

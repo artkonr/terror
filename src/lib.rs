@@ -42,7 +42,7 @@ use uuid::Uuid;
 /// sake of convenience, object construction may
 /// be done via [builder](Builder).
 #[derive(Debug, Serialize)]
-pub struct ErrorObj {
+pub struct Terror {
 
     pub status: u16,
     pub message: String,
@@ -62,7 +62,7 @@ pub struct ErrorObj {
 
 }
 
-impl fmt::Display for ErrorObj {
+impl fmt::Display for Terror {
 
     /// Formats the object into a nicely
     /// looking log line. At the minimum,
@@ -101,29 +101,7 @@ impl fmt::Display for ErrorObj {
     }
 }
 
-/// A builder for [ErrorObj]. Intended
-/// for one-time used, consumed after calling
-/// [Builder::build].
-pub struct Builder {
-
-    status: u16,
-    message: String,
-    short_message: Option<String>,
-    error_code: Option<String>,
-    details: HashMap<String, Value>,
-    reference: Option<String>,
-
-    #[cfg(feature = "time")]
-    timestamp: DateTime<Utc>,
-
-    #[cfg(feature = "err_id")]
-    id: Uuid,
-
-    tags: Vec<String>
-
-}
-
-impl Builder {
+impl Terror {
 
     /// Constructs a new builder with the
     /// minimal data provided explicitly.
@@ -150,9 +128,36 @@ impl Builder {
     /// [Error] subtype and assumes HTTP
     /// status of `500 Internal Server Error`.
     pub fn from_error<T: Error>(err: T) -> Builder {
-        Builder::new(500, format!("{}", err))
+        Terror::new(500, format!("{}", err))
     }
 
+
+}
+
+/// A builder for [Terror]. Intended
+/// for one-time used, consumed after
+/// calling [Builder::build].
+pub struct Builder {
+
+    status: u16,
+    message: String,
+    short_message: Option<String>,
+    error_code: Option<String>,
+    details: HashMap<String, Value>,
+    reference: Option<String>,
+
+    #[cfg(feature = "time")]
+    timestamp: DateTime<Utc>,
+
+    #[cfg(feature = "err_id")]
+    id: Uuid,
+
+    tags: Vec<String>
+
+}
+
+impl Builder {
+    
     /// Adds a short error message.
     pub fn short_message(mut self, msg: String) -> Builder {
         self.short_message = Some(msg);
@@ -171,8 +176,8 @@ impl Builder {
     ///
     /// For instance,
     /// ```rust
-    /// use terror::Builder;
-    /// let built = Builder::new(500, String::from("generic error"))
+    /// use terror::{Builder, Terror};
+    /// let built = Terror::new(500, String::from("generic error"))
     ///     .add_text_detail(String::from("object_name"), String::from("server"))
     ///     .build();
     /// ```
@@ -202,8 +207,8 @@ impl Builder {
     ///
     /// For instance,
     /// ```rust
-    /// use terror::Builder;
-    /// let built = Builder::new(500, String::from("generic error"))
+    /// use terror::{Builder, Terror};
+    /// let built = Terror::new(500, String::from("generic error"))
     ///     .add_int_detail(String::from("object_id"), 922i64)
     ///     .build();
     /// ```
@@ -233,8 +238,8 @@ impl Builder {
     ///
     /// For instance,
     /// ```rust
-    /// use terror::Builder;
-    /// let built = Builder::new(500, String::from("generic error"))
+    /// use terror::{Builder, Terror};
+    /// let built = Terror::new(500, String::from("generic error"))
     ///     .add_bool_detail(String::from("object_up"), false)
     ///     .build();
     /// ```
@@ -265,16 +270,14 @@ impl Builder {
     ///
     /// For instance,
     /// ```rust
-    /// use std::collections::HashMap;
-    /// use terror::Builder;
-    /// use serde_derive::Serialize;
-    /// use serde_json::{json, Number, Value};
+    /// use terror::{Builder, Terror};
+    /// use serde_json::{json, Value};
     ///
-    /// let built = Builder::new(500, String::from("generic error"))
+    /// let built = Terror::new(500, String::from("generic error"))
     ///     .add_value_detail(
     ///         String::from("object"),
     ///         Value::from(json!({
-    ///             "id" : 94,
+    ///             "id" : 94i32,
     ///             "name" : "server"
     ///         }))
     ///     )
@@ -319,11 +322,11 @@ impl Builder {
     }
 
     /// Concludes the configuration and produces
-    /// a new [ErrorObj] instance with all
+    /// a new [Terror] instance with all
     /// ownerships transferred, thus fully consuming
     /// `self`.
-    pub fn build(self) -> ErrorObj {
-        ErrorObj {
+    pub fn build(self) -> Terror {
+        Terror {
             status: self.status,
             message: self.message.clone(),
             short_message: self.short_message.clone(),
@@ -350,12 +353,12 @@ mod no_feature_test {
     use std::fmt;
     use std::fmt::Formatter;
     use serde_json::{json, Value};
-    use crate::{Builder, MDN_STATUS_REF};
+    use crate::{Builder, MDN_STATUS_REF, Terror};
 
     #[test]
     fn build_with_explicit_status() {
         let msg = "generic error";
-        let built = Builder::new(
+        let built = Terror::new(
             404,
             String::from(msg)
         )
@@ -371,7 +374,7 @@ mod no_feature_test {
     #[test]
     fn build_from_error() {
         let error = TestError;
-        let built = Builder::from_error(error)
+        let built = Terror::from_error(error)
             .build();
 
         assert_eq!(500, built.status);
@@ -383,7 +386,7 @@ mod no_feature_test {
 
     #[test]
     fn build_no_short_message_set() {
-        let built = Builder::new(
+        let built = Terror::new(
             404,
             String::from("generic error")
         )
@@ -395,7 +398,7 @@ mod no_feature_test {
     #[test]
     fn build_short_message_set() {
         let short_message = "generic";
-        let built = Builder::new(
+        let built = Terror::new(
             404,
             String::from("generic error")
         )
@@ -411,7 +414,7 @@ mod no_feature_test {
 
     #[test]
     fn build_no_error_code_set() {
-        let built = Builder::new(
+        let built = Terror::new(
             404,
             String::from("generic error")
         )
@@ -423,7 +426,7 @@ mod no_feature_test {
     #[test]
     fn build_error_code_set() {
         let error_code = "generic.failure";
-        let built = Builder::new(
+        let built = Terror::new(
             404,
             String::from("generic error")
         )
@@ -439,7 +442,7 @@ mod no_feature_test {
 
     #[test]
     fn build_no_reference_set() {
-        let built = Builder::new(
+        let built = Terror::new(
             404,
             String::from("generic error")
         )
@@ -450,7 +453,7 @@ mod no_feature_test {
 
     #[test]
     fn build_reference_set() {
-        let built = Builder::new(
+        let built = Terror::new(
             404,
             String::from("generic error")
         )
@@ -466,7 +469,7 @@ mod no_feature_test {
 
     #[test]
     fn build_no_details() {
-        let built = Builder::new(
+        let built = Terror::new(
             404,
             String::from("generic error")
         )
@@ -477,7 +480,7 @@ mod no_feature_test {
 
     #[test]
     fn build_with_string_detail() {
-        let built = Builder::new(
+        let built = Terror::new(
             404,
             String::from("generic error")
         )
@@ -499,7 +502,7 @@ mod no_feature_test {
 
     #[test]
     fn build_with_number_detail() {
-        let built = Builder::new(
+        let built = Terror::new(
             404,
             String::from("generic error")
         )
@@ -521,7 +524,7 @@ mod no_feature_test {
 
     #[test]
     fn build_with_bool_detail() {
-        let built = Builder::new(
+        let built = Terror::new(
             404,
             String::from("generic error")
         )
@@ -543,7 +546,7 @@ mod no_feature_test {
 
     #[test]
     fn build_with_struct_detail() {
-        let built = Builder::new(
+        let built = Terror::new(
             404,
             String::from("generic error")
         )
@@ -563,7 +566,7 @@ mod no_feature_test {
 
     #[test]
     fn build_with_several_details() {
-        let built = Builder::new(
+        let built = Terror::new(
             404,
             String::from("generic error")
         )
@@ -608,11 +611,11 @@ mod with_features_test {
     use std::fmt;
     use std::fmt::Formatter;
     use chrono::{Utc};
-    use crate::Builder;
+    use crate::{Builder, Terror};
 
     #[test]
     fn build_with_explicit_status() {
-        let built = Builder::new(
+        let built = Terror::new(
             404,
             String::from("generic error")
         );
@@ -627,7 +630,7 @@ mod with_features_test {
     #[test]
     fn build_from_error() {
         let error = TestError;
-        let built = Builder::from_error(error)
+        let built = Terror::from_error(error)
             .build();
 
         assert_eq!(4, built.id.get_version_num());
