@@ -46,10 +46,7 @@ jobs:
         env:
           UPDATE_KIND: "${{ github.event.inputs.updateKind }}"
         run: |
-          pwd
-          ls
-          
-          cat Cargo.toml
+          cat Cargo.toml | grep "^version"
           CURRENT_VERSION=$(cat Cargo.toml | grep "^version" | grep -o -E "[0-9]+\.[0-9]+\.[0-9]+")
           
           echo "> Current version: $CURRENT"
