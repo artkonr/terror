@@ -48,10 +48,14 @@ jobs:
         run: |
           CURRENT_VERSION=$(cat Cargo.toml | grep "^version" | grep -o -E "[0-9]+\.[0-9]+\.[0-9]+")
           
+          echo "> Current version: $CURRENT"
+          
           # compute new version
           MAJOR=$(echo "$CURRENT" | grep -o "^[0-9]")
           MINOR=$(echo "$CURRENT" | grep -o "\.[0-9]\." | tr -d '.')
           PATCH=$(echo "$CURRENT" | grep -o "[0-9]$")
+          
+          echo "> Update kind: $UPDATE_KIND"
           
           case $UPDATE_KIND in
             "patch")
@@ -68,6 +72,8 @@ jobs:
           esac
           
           NEW="$MAJOR.$MINOR.$PATCH"
+          
+          echo "> New version: $NEW"
           
           # update Cargo.toml
           sed -i "s/^version = \"$CURRENT\"/version = \"$NEW\"/g" Cargo.toml
