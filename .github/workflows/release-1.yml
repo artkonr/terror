@@ -1,31 +1,104 @@
-# This is a basic workflow to help you get started with Actions
-
 name: release
-
-# Controls when the workflow will run
 on:
-
-  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
+    inputs:
+      updateKind:
+        description: "Kind of version increment"
+        required: false
+        default: "patch"
+        type: choice
+        options:
+          - "patch"
+          - "minor"
+          - "major"
+      branch:
+        description: "Branch to release from"
+        type: string
+        required: false
+        default: main
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-  # This workflow contains a single job called "build"
-  build:
-    # The type of runner that the job will run on
+  release:
     runs-on: ubuntu-latest
-
-    # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v3
+      - id: checkout
+        name: Checkout
+        uses: actions/checkout@v3
+        with:
+          ref: "${{ github.event.inputs.branch }}"
 
-      # Runs a single command using the runners shell
-      - name: Run a one-line script
-        run: echo Hello, world!
+      - id: test
+        name: "Pre-release build"
+        run: cargo build --all-features
 
-      # Runs a set of commands using the runners shell
-      - name: Run a multi-line script
+      - id: publish-dry-run
+        name: "Pre-publish check"
+        run: cargo publish --all-features --dry-run
+
+      - id: configure-git
+        name: "Configure git"
         run: |
-          echo Add other actions to build,
-          echo test, and deploy your project.
+          git config user.name release-chore
+          git config user.email release-chore@gh.io
+
+      - id: update-version
+        name: "Update package version"
+        env:
+          UPDATE_KIND: "${{ github.event.inputs.updateKind }}"
+        run: |
+          CURRENT=$(cat Cargo.toml | grep "^version" | grep -o -E "[0-9]+\.[0-9]+\.[0-9]+")
+          
+          echo "> Current version: $CURRENT"
+          
+          # compute new version
+          MAJOR=$(echo "$CURRENT" | grep -o "^[0-9]")
+          MINOR=$(echo "$CURRENT" | grep -o "\.[0-9]\." | tr -d '.')
+          PATCH=$(echo "$CURRENT" | grep -o "[0-9]$")
+          
+          echo "> Update kind: $UPDATE_KIND"
+          
+          case $UPDATE_KIND in
+            "patch")
+              PATCH=$(($PATCH + 1))
+            ;;
+          
+            "minor")
+              MINOR=$(($MINOR + 1))
+            ;;
+          
+            "major")
+              MAJOR=$(($MAJOR + 1))
+            ;;
+          esac
+          
+          NEW="$MAJOR.$MINOR.$PATCH"
+          
+          echo "> New version: $NEW"
+          
+          # update Cargo.toml
+          sed -i "s/^version = \"$CURRENT\"/version = \"$NEW\"/g" Cargo.toml
+          
+          # update in README.md
+          sed -i "s/terror = \"$CURRENT\"/terror = \"$NEW\"/g" README.md
+          
+          git add .
+          git commit -m "version update: $CURRENT > $NEW"
+          git push
+
+          git tag -a "$NEW" -m "version update: $CURRENT > $NEW"
+          git push --tags
+
+      - id: checkout-tag
+        name: "Tag checkout"
+        run: |
+          VERSION=$(cat Cargo.toml | grep "^version" | grep -o -E "[0-9]+\.[0-9]+\.[0-9]+")
+          git checkout tags/$VERSION
+
+      - id: publish
+        name: "Publish crate"
+        env:
+          CARGO_TOKEN: "${{ secrets.CRATES_IO_TOKEN }}"
+        run: |
+          cargo login $CARGO_TOKEN
+          
+          cargo publish --all-features

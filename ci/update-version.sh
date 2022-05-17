@@ -1,10 +1,17 @@
 UPDATE_KIND="patch"
+COMMIT_CHANGES="false"
 
 while [[ $# -gt 0 ]]; do
 
   case "$1" in
     "--kind"|"-k")
       UPDATE_KIND="$2"
+      shift
+      shift
+    ;;
+
+    "--commit"|"-c")
+      COMMIT_CHANGES="$2"
       shift
       shift
     ;;
@@ -55,3 +62,19 @@ sed -i "s/^version = \"$CURRENT\"/version = \"$NEW\"/g" Cargo.toml
 
 # update in README.md
 sed -i "s/terror = \"$CURRENT\"/terror = \"$NEW\"/g" README.md
+
+if [ "$COMMIT_CHANGES" == "true" ]; then
+  echo "> Committing changes"
+
+  git config user.name "terror-release-chore"
+  git config user.email "terror-release-chore@gh.io"
+
+  MESSAGE="[release] updating $CURRENT > $NEW"
+  git add .
+  git commit -m "$MESSAGE"
+  git push
+
+  git tag -a "$NEW" -m "$MESSAGE"
+  git push --tags
+
+fi
