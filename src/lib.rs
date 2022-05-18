@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::fmt::Formatter;
-use serde_derive::Serialize;
+use serde_derive::{Serialize, Deserialize};
 
 #[cfg(feature = "time")]
 use chrono::{DateTime, Utc};
@@ -41,13 +41,15 @@ use uuid::Uuid;
 /// all object fields are `pub`. However, for the
 /// sake of convenience, object construction may
 /// be done via [builder](Builder).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
 pub struct Terror {
 
     pub status: u16,
     pub message: String,
     pub short_message: Option<String>,
     pub error_code: Option<String>,
+
+    #[serde(default = "Terror::default_empty_map")]
     pub details: HashMap<String, Value>,
     pub reference: Option<String>,
 
@@ -57,7 +59,7 @@ pub struct Terror {
     #[cfg(feature = "err_id")]
     pub id: Uuid,
 
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     pub tags: Vec<String>
 
 }
@@ -131,6 +133,10 @@ impl Terror {
         Terror::new(500, format!("{}", err))
     }
 
+    /// Default handler for JSON map fields.
+    fn default_empty_map() -> HashMap<String, Value> {
+        HashMap::new()
+    }
 
 }
 
@@ -353,7 +359,7 @@ mod no_feature_test {
     use std::fmt;
     use std::fmt::Formatter;
     use serde_json::{json, Value};
-    use crate::{Builder, MDN_STATUS_REF, Terror};
+    use crate::{MDN_STATUS_REF, Terror};
 
     #[test]
     fn build_with_explicit_status() {
@@ -592,6 +598,70 @@ mod no_feature_test {
         assert!(built.details.contains_key("flg"));
     }
 
+    #[test]
+    #[cfg(not(feature = "err_id"))]
+    #[cfg(not(feature = "time"))]
+    fn deserialize_all_fields() {
+        let inbound = json!({
+            "status" : 405u16,
+            "message" : "Method not allowed; use GET",
+            "short_message" : "Not allowed",
+            "error_code" : "web.generic",
+            "details" : {
+                "allowed" : [ "GET" ],
+                "got" : "OPTIONS"
+            },
+            "reference" : format!("{}/{}", MDN_STATUS_REF, 405)
+        });
+
+        let as_struct = serde_json::from_value(inbound);
+        assert!(as_struct.is_ok());
+
+        let expected = Terror::new(
+            405,
+            String::from("Method not allowed; use GET")
+        )
+            .short_message(String::from("Not allowed"))
+            .error_code(String::from("web.generic"))
+            .add_text_detail(
+                String::from("got"),
+                String::from("OPTIONS")
+            )
+            .add_value_detail(
+                String::from("allowed"),
+                Value::Array(vec![
+                    Value::String(String::from("GET"))
+                ])
+            )
+            .reference()
+            .build();
+
+        assert_eq!(expected, as_struct.unwrap());
+    }
+
+    #[test]
+    #[cfg(not(feature = "err_id"))]
+    #[cfg(not(feature = "time"))]
+    fn deserialize_some_fields() {
+        let inbound = json!({
+            "status" : 405u16,
+            "message" : "Method not allowed; use GET",
+            "error_code" : "web.generic",
+        });
+
+        let as_struct = serde_json::from_value(inbound);
+        assert!(as_struct.is_ok());
+
+        let expected = Terror::new(
+            405,
+            String::from("Method not allowed; use GET")
+        )
+            .error_code(String::from("web.generic"))
+            .build();
+
+        assert_eq!(expected, as_struct.unwrap());
+    }
+
     #[derive(Debug)]
     struct TestError;
 
@@ -610,8 +680,11 @@ mod with_features_test {
     use std::error::Error;
     use std::fmt;
     use std::fmt::Formatter;
-    use chrono::{Utc};
-    use crate::{Builder, Terror};
+    use std::str::FromStr;
+    use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
+    use serde_json::json;
+    use uuid::Uuid;
+    use crate::{Terror};
 
     #[test]
     fn build_with_explicit_status() {
@@ -638,6 +711,37 @@ mod with_features_test {
             Utc::now().date(),
             built.timestamp.date()
         )
+    }
+
+    #[test]
+    fn deserialize_some_fields() {
+        let inbound = json!({
+            "status" : 405u16,
+            "message" : "Method not allowed; use GET",
+            "id" : "2d10a950-d6f4-11ec-ab97-00155d887325",
+            "timestamp" : "2022-01-01T21:00:00Z"
+        });
+
+        let as_struct = serde_json::from_value(inbound);
+        assert!(as_struct.is_ok());
+
+        let mut expected = Terror::new(
+            405,
+            String::from("Method not allowed; use GET")
+        )
+            .build();
+
+        expected.id = Uuid::from_str("2d10a950-d6f4-11ec-ab97-00155d887325")
+            .unwrap();
+        expected.timestamp = DateTime::from_utc(
+            NaiveDateTime::new(
+                NaiveDate::from_ymd(2022, 1, 1),
+                NaiveTime::from_hms(21, 0, 0)
+            ),
+            Utc
+        );
+
+        assert_eq!(expected, as_struct.unwrap());
     }
 
     #[derive(Debug)]

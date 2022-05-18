@@ -16,7 +16,9 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-    - name: Run tests
+    - name: "Run tests without features"
+      run: cargo test --verbose
+    - name: "Run tests with all features"
       run: cargo test --all-features --verbose
     - name: Build documentation
       run: cargo doc
