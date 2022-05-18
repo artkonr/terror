@@ -57,10 +57,7 @@ pub struct Terror {
     pub timestamp: DateTime<Utc>,
 
     #[cfg(feature = "err_id")]
-    pub id: Uuid,
-
-    #[serde(skip)]
-    pub tags: Vec<String>
+    pub id: Uuid
 
 }
 
@@ -76,30 +73,8 @@ impl fmt::Display for Terror {
     /// ```text
     /// (409) :: failed to persist entity due to version conflict
     /// ```
-    ///
-    /// And this example demonstrates the
-    /// use of log tags, which may be added
-    /// for debugging purposes.
-    /// ```text
-    /// [op:persist ctx:none] (409) :: failed to persist entity due to version conflict
-    /// ```
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let mut tags = String::new();
-
-        if !self.tags.is_empty() {
-            for tag in &self.tags {
-                if tags.is_empty() {
-                    tags.push('[');
-                } else {
-                    tags.push(' ');
-                }
-
-                tags.push_str(tag.as_str())
-            }
-            tags.push(' ');
-        }
-
-        write!(f, "{}({}) :: {}", tags, self.status, self.message)
+        write!(f, "({}) :: {}", self.status, self.message)
     }
 }
 
@@ -121,9 +96,13 @@ impl Terror {
 
             #[cfg(feature = "err_id")]
             id: Uuid::new_v4(),
-
-            tags: Vec::new()
         }
+    }
+
+    /// Constructs a new builder with the
+    /// minimal data provided explicitly.
+    pub fn new_str(status: u16, msg: &str) -> Builder {
+        Terror::new(status, String::from(msg))
     }
 
     /// Constructs a new builder from any
@@ -156,9 +135,7 @@ pub struct Builder {
     timestamp: DateTime<Utc>,
 
     #[cfg(feature = "err_id")]
-    id: Uuid,
-
-    tags: Vec<String>
+    id: Uuid
 
 }
 
@@ -170,9 +147,21 @@ impl Builder {
         self
     }
 
+    /// Adds a short error message.
+    pub fn short_message_str(mut self, msg: &str) -> Builder {
+        self.short_message = Some(String::from(msg));
+        self
+    }
+
     /// Adds an error code.
     pub fn error_code(mut self, code: String) -> Builder {
         self.error_code = Some(code);
+        self
+    }
+
+    /// Adds an error code.
+    pub fn error_code_str(mut self, code: &str) -> Builder {
+        self.error_code = Some(String::from(code));
         self
     }
 
@@ -199,9 +188,23 @@ impl Builder {
     ///     }
     /// }
     /// ```
-    pub fn add_text_detail(mut self, name: String, value: String) -> Builder {
+    pub fn add_text_detail(mut self,
+                           name: String,
+                           value: String) -> Builder {
         self.details.insert(
             name,
+            Value::String(value)
+        );
+        self
+    }
+
+    /// A shorthand for [Builder::add_text_detail],
+    /// which allows to pass the key name as `&str`.
+    pub fn add_text_detail_str_key(mut self,
+                                   name: &str,
+                                   value: String) -> Builder {
+        self.details.insert(
+            String::from(name),
             Value::String(value)
         );
         self
@@ -230,9 +233,23 @@ impl Builder {
     ///     }
     /// }
     /// ```
-    pub fn add_int_detail(mut self, name: String, value: i64) -> Builder {
+    pub fn add_int_detail(mut self,
+                          name: String,
+                          value: i64) -> Builder {
         self.details.insert(
             name,
+            Value::Number(Number::from(value))
+        );
+        self
+    }
+
+    /// A shorthand for [Builder::add_int_detail],
+    /// which allows to pass the key name as `&str`.
+    pub fn add_int_detail_str_key(mut self,
+                                  name: &str,
+                                  value: i64) -> Builder {
+        self.details.insert(
+            String::from(name),
             Value::Number(Number::from(value))
         );
         self
@@ -261,9 +278,23 @@ impl Builder {
     ///     }
     /// }
     /// ```
-    pub fn add_bool_detail(mut self, name: String, value: bool) -> Builder {
+    pub fn add_bool_detail(mut self,
+                           name: String,
+                           value: bool) -> Builder {
         self.details.insert(
             name,
+            Value::Bool(value)
+        );
+        self
+    }
+
+    /// A shorthand for [Builder::add_bool_detail],
+    /// which allows to pass the key name as `&str`.
+    pub fn add_bool_detail_str_key(mut self,
+                                  name: &str,
+                                  value: bool) -> Builder {
+        self.details.insert(
+            String::from(name),
             Value::Bool(value)
         );
         self
@@ -304,9 +335,23 @@ impl Builder {
     ///     }
     /// }
     /// ```
-    pub fn add_value_detail(mut self, name: String, value: Value) -> Builder {
+    pub fn add_value_detail(mut self,
+                            name: String,
+                            value: Value) -> Builder {
         self.details.insert(
             name,
+            value
+        );
+        self
+    }
+
+    /// A shorthand for [Builder::add_value_detail],
+    /// which allows to pass the key name as `&str`.
+    pub fn add_value_detail_str_key(mut self,
+                                    name: &str,
+                                    value: Value) -> Builder {
+        self.details.insert(
+            String::from(name),
             value
         );
         self
@@ -318,12 +363,6 @@ impl Builder {
     pub fn reference(mut self) -> Builder {
         let url = format!("{}/{}", MDN_STATUS_REF, self.status);
         self.reference = Some(url);
-        self
-    }
-
-    /// Adds a log tag for debugging purposes.
-    pub fn add_tag(mut self, tag: String) -> Builder {
-        self.tags.push(tag);
         self
     }
 
@@ -339,7 +378,6 @@ impl Builder {
             error_code: self.error_code.clone(),
             details:self.details,
             reference: self.reference.clone(),
-            tags: self.tags.clone(),
 
             #[cfg(feature = "time")]
             timestamp: self.timestamp.clone(),
@@ -419,6 +457,23 @@ mod no_feature_test {
     }
 
     #[test]
+    fn build_short_message_shorthand_set() {
+        let short_message = "generic";
+        let built = Terror::new(
+            404,
+            String::from("generic error")
+        )
+            .short_message_str(short_message)
+            .build();
+
+        assert!(built.short_message.is_some());
+        assert_eq!(
+            String::from(short_message),
+            built.short_message.unwrap()
+        );
+    }
+
+    #[test]
     fn build_no_error_code_set() {
         let built = Terror::new(
             404,
@@ -437,6 +492,23 @@ mod no_feature_test {
             String::from("generic error")
         )
             .error_code(String::from(error_code))
+            .build();
+
+        assert!(built.error_code.is_some());
+        assert_eq!(
+            String::from(error_code),
+            built.error_code.unwrap()
+        );
+    }
+
+    #[test]
+    fn build_error_code_shorthand_set() {
+        let error_code = "generic.failure";
+        let built = Terror::new(
+            404,
+            String::from("generic error")
+        )
+            .error_code_str(error_code)
             .build();
 
         assert!(built.error_code.is_some());
