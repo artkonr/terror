@@ -1,7 +1,15 @@
 [package]
 name = "terror"
-version = "0.1.0"
+description = "Uniform REST error response body, tailored for JSON"
+version = "0.1.1"
 edition = "2021"
+rust-version = "1.60"
+license = "MIT"
+keywords = ["rest", "error", "json"]
+readme = "README.md"
+homepage = "https://github.com/artkonr/terror"
+
+exclude = ["/ci", ".github"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -10,5 +18,8 @@ time = ["dep:chrono"]
 err_id = ["dep:uuid"]
 
 [dependencies]
-chrono = { version = "0.4.19", optional = true }
-uuid = { version = "1.0.0", features = ["v4"], optional = true }
+chrono = { version = "0.4.19", optional = true, features = ["serde"] }
+uuid = { version = "1.0.0", features = ["v4", "serde"], optional = true }
+serde = "1.0.137"
+serde_json = "1.0.80"
+serde_derive = "1.0.137"
