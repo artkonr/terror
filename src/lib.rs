@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
-use std::fmt::Formatter;
+use std::fmt::{Debug, Formatter};
 use serde_derive::{Serialize, Deserialize};
 
 #[cfg(feature = "time")]
 use chrono::{DateTime, Utc};
+use serde::Serialize;
 use serde_json::{Number, Value};
 #[cfg(feature = "err_id")]
 use uuid::Uuid;
@@ -44,18 +45,34 @@ use uuid::Uuid;
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
 pub struct Terror {
 
+    /// HTTP status code
     pub status: u16,
+
+    /// Full error message
     pub message: String,
+
+    /// Shortened error message; nullable
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub short_message: Option<String>,
+
+    /// Error code; nullable
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub error_code: Option<String>,
 
+    /// Arbitrary error details
     #[serde(default = "Terror::default_empty_map")]
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub details: HashMap<String, Value>,
-    pub reference: Option<String>,
 
+    /// A reference to the MDN about the status code
+    #[cfg(feature = "mdn")]
+    pub reference: String,
+
+    /// Error timestamp as captured by server
     #[cfg(feature = "time")]
     pub timestamp: DateTime<Utc>,
 
+    /// Error ID
     #[cfg(feature = "err_id")]
     pub id: Uuid
 
@@ -82,14 +99,33 @@ impl Terror {
 
     /// Constructs a new builder with the
     /// minimal data provided explicitly.
-    pub fn new(status: u16, msg: String) -> Builder {
+    ///
+    /// ### Examples
+    ///
+    /// For instance,
+    /// ```rust
+    /// use terror::{Terror, Builder};
+    /// let built = Terror::new(429, String::from("some error"))
+    ///     .build();
+    /// ```
+    ///
+    /// Thanks to generic text parameter, the following also works:
+    /// ```rust
+    /// use terror::{Terror, Builder};
+    /// let built = Terror::new(429, "some error")
+    ///     .build();
+    /// ```
+    pub fn new<K: Into<String>>(status: u16, msg: K) -> Builder {
+        let into: String = msg.into();
         Builder {
             status,
-            message: msg,
+            message: into,
             short_message: None,
             error_code: None,
             details: HashMap::new(),
-            reference: None,
+
+            #[cfg(feature = "mdn")]
+            reference: format!("{}/{}", MDN_STATUS_REF, status),
 
             #[cfg(feature = "time")]
             timestamp: Utc::now(),
@@ -97,12 +133,6 @@ impl Terror {
             #[cfg(feature = "err_id")]
             id: Uuid::new_v4(),
         }
-    }
-
-    /// Constructs a new builder with the
-    /// minimal data provided explicitly.
-    pub fn new_str(status: u16, msg: &str) -> Builder {
-        Terror::new(status, String::from(msg))
     }
 
     /// Constructs a new builder from any
@@ -119,8 +149,14 @@ impl Terror {
 
 }
 
+impl Default for Terror {
+    fn default() -> Self {
+        Terror::new(500, "generic error").build()
+    }
+}
+
 /// A builder for [Terror]. Intended
-/// for one-time used, consumed after
+/// for one-time use, consumed after
 /// calling [Builder::build].
 pub struct Builder {
 
@@ -129,7 +165,9 @@ pub struct Builder {
     short_message: Option<String>,
     error_code: Option<String>,
     details: HashMap<String, Value>,
-    reference: Option<String>,
+
+    #[cfg(feature = "mdn")]
+    reference: String,
 
     #[cfg(feature = "time")]
     timestamp: DateTime<Utc>,
@@ -142,227 +180,85 @@ pub struct Builder {
 impl Builder {
     
     /// Adds a short error message.
-    pub fn short_message(mut self, msg: String) -> Builder {
-        self.short_message = Some(msg);
-        self
-    }
-
-    /// Adds a short error message.
-    pub fn short_message_str(mut self, msg: &str) -> Builder {
-        self.short_message = Some(String::from(msg));
+    pub fn shorthand<K: Into<String>>(mut self, msg: K) -> Builder {
+        let into: String = msg.into();
+        self.short_message = Some(into);
         self
     }
 
     /// Adds an error code.
-    pub fn error_code(mut self, code: String) -> Builder {
-        self.error_code = Some(code);
-        self
-    }
-
-    /// Adds an error code.
-    pub fn error_code_str(mut self, code: &str) -> Builder {
-        self.error_code = Some(String::from(code));
+    pub fn error_code<K: Into<String>>(mut self, code: K) -> Builder {
+        let into: String = code.into();
+        self.error_code = Some(into);
         self
     }
 
     /// Adds a text detail.
-    ///
-    /// ### Examples
-    ///
-    /// For instance,
-    /// ```rust
-    /// use terror::{Builder, Terror};
-    /// let built = Terror::new(500, String::from("generic error"))
-    ///     .add_text_detail(String::from("object_name"), String::from("server"))
-    ///     .build();
-    /// ```
-    ///
-    /// ... may be rendered into a JSON like below:
-    ///
-    /// ```json
-    /// {
-    ///     "status" : 500,
-    ///     "message" : "generic error",
-    ///     "details" : {
-    ///         "object_name" : "server"
-    ///     }
-    /// }
-    /// ```
-    pub fn add_text_detail(mut self,
-                           name: String,
-                           value: String) -> Builder {
-        self.details.insert(
-            name,
-            Value::String(value)
-        );
-        self
-    }
-
-    /// A shorthand for [Builder::add_text_detail],
-    /// which allows to pass the key name as `&str`.
-    pub fn add_text_detail_str_key(mut self,
-                                   name: &str,
-                                   value: String) -> Builder {
-        self.details.insert(
-            String::from(name),
-            Value::String(value)
-        );
+    pub fn add_text_detail<K, V>(mut self,
+                                 name: K,
+                                 value: V) -> Builder
+        where K: Into<String>,
+              V: Into<String>
+    {
+        let name: String = name.into();
+        let value: String = value.into();
+        self.details.insert(name, Value::String(value));
         self
     }
 
     /// Adds a numeric detail.
-    ///
-    /// ### Examples
-    ///
-    /// For instance,
-    /// ```rust
-    /// use terror::{Builder, Terror};
-    /// let built = Terror::new(500, String::from("generic error"))
-    ///     .add_int_detail(String::from("object_id"), 922i64)
-    ///     .build();
-    /// ```
-    ///
-    /// ... may be rendered into a JSON like below:
-    ///
-    /// ```json
-    /// {
-    ///     "status" : 500,
-    ///     "message" : "generic error",
-    ///     "details" : {
-    ///         "object_id" : 922
-    ///     }
-    /// }
-    /// ```
-    pub fn add_int_detail(mut self,
-                          name: String,
-                          value: i64) -> Builder {
-        self.details.insert(
-            name,
-            Value::Number(Number::from(value))
-        );
-        self
-    }
-
-    /// A shorthand for [Builder::add_int_detail],
-    /// which allows to pass the key name as `&str`.
-    pub fn add_int_detail_str_key(mut self,
-                                  name: &str,
-                                  value: i64) -> Builder {
-        self.details.insert(
-            String::from(name),
-            Value::Number(Number::from(value))
-        );
+    pub fn add_int_detail<K: Into<String>>(mut self,
+                                           name: K,
+                                           value: i64) -> Builder {
+        let into: String = name.into();
+        self.details.insert(into, Value::Number(Number::from(value)));
         self
     }
 
     /// Adds a boolean detail.
-    ///
-    /// ### Examples
-    ///
-    /// For instance,
-    /// ```rust
-    /// use terror::{Builder, Terror};
-    /// let built = Terror::new(500, String::from("generic error"))
-    ///     .add_bool_detail(String::from("object_up"), false)
-    ///     .build();
-    /// ```
-    ///
-    /// ... may be rendered into a JSON like below:
-    ///
-    /// ```json
-    /// {
-    ///     "status" : 500,
-    ///     "message" : "generic error",
-    ///     "details" : {
-    ///         "object_up" : false
-    ///     }
-    /// }
-    /// ```
-    pub fn add_bool_detail(mut self,
-                           name: String,
-                           value: bool) -> Builder {
-        self.details.insert(
-            name,
-            Value::Bool(value)
-        );
+    pub fn add_bool_detail<K: Into<String>>(mut self,
+                                            name: K,
+                                            value: bool) -> Builder {
+        let into: String = name.into();
+        self.details.insert(into, Value::Bool(value));
         self
     }
 
-    /// A shorthand for [Builder::add_bool_detail],
-    /// which allows to pass the key name as `&str`.
-    pub fn add_bool_detail_str_key(mut self,
-                                  name: &str,
-                                  value: bool) -> Builder {
-        self.details.insert(
-            String::from(name),
-            Value::Bool(value)
-        );
+    /// Adds an [Value] object as detail.
+    pub fn add_value_detail<K: Into<String>>(mut self,
+                                             name: K,
+                                             value: Value) -> Builder {
+        let into: String = name.into();
+        self.details.insert(into, value);
         self
     }
 
-    /// Adds an arbitrary object as detail. Requires
-    /// to be passed as a pointer.
-    ///
-    /// ### Examples
-    ///
-    /// For instance,
-    /// ```rust
-    /// use terror::{Builder, Terror};
-    /// use serde_json::{json, Value};
-    ///
-    /// let built = Terror::new(500, String::from("generic error"))
-    ///     .add_value_detail(
-    ///         String::from("object"),
-    ///         Value::from(json!({
-    ///             "id" : 94i32,
-    ///             "name" : "server"
-    ///         }))
-    ///     )
-    ///     .build();
-    /// ```
-    ///
-    /// ... may be rendered into a JSON like below:
-    ///
-    /// ```json
-    /// {
-    ///     "status" : 500,
-    ///     "message" : "generic error",
-    ///     "details" : {
-    ///         "object" : {
-    ///             "id" : 94,
-    ///             "name" : "server"
-    ///         }
-    ///     }
-    /// }
-    /// ```
-    pub fn add_value_detail(mut self,
-                            name: String,
-                            value: Value) -> Builder {
-        self.details.insert(
-            name,
-            value
-        );
+    /// Adds a `null` object as detail.
+    pub fn add_null_detail<K: Into<String>>(mut self, name: K) -> Builder {
+        let into: String = name.into();
+        self.details.insert(into, Value::Null);
         self
     }
 
-    /// A shorthand for [Builder::add_value_detail],
-    /// which allows to pass the key name as `&str`.
-    pub fn add_value_detail_str_key(mut self,
-                                    name: &str,
-                                    value: Value) -> Builder {
-        self.details.insert(
-            String::from(name),
-            value
-        );
-        self
-    }
-
-    /// Instructs the builder to attach
-    /// a reference to MDN page explaining
-    /// the HTTP status code.
-    pub fn reference(mut self) -> Builder {
-        let url = format!("{}/{}", MDN_STATUS_REF, self.status);
-        self.reference = Some(url);
+    /// Adds a serialised struct detail from a
+    /// provided [Serialize]-annotated object.
+    ///
+    /// ### Panics
+    ///
+    /// This method expects that `obj` parameter
+    /// can be correctly serialised into JSON
+    /// and panics if [serde_json::to_value]
+    /// fails.
+    pub fn add_struct_detail<K, S>(mut self,
+                                   name: K,
+                                   obj: S) -> Builder
+        where K: Into<String>,
+              S: Serialize + Debug
+    {
+        let into: String = name.into();
+        let value = serde_json::to_value(obj)
+            .expect(format!("failed to serialise: {:?}", obj).as_str());
+        self.details.insert(into, value);
         self
     }
 
@@ -376,7 +272,7 @@ impl Builder {
             message: self.message.clone(),
             short_message: self.short_message.clone(),
             error_code: self.error_code.clone(),
-            details:self.details,
+            details: self.details,
             reference: self.reference.clone(),
 
             #[cfg(feature = "time")]
@@ -397,277 +293,177 @@ mod no_feature_test {
     use std::fmt;
     use std::fmt::Formatter;
     use serde_json::{json, Value};
-    use crate::{MDN_STATUS_REF, Terror};
+    use crate::{Builder, Terror};
+
+    type R = anyhow::Result<()>;
 
     #[test]
-    fn build_with_explicit_status() {
-        let msg = "generic error";
-        let built = Terror::new(
-            404,
-            String::from(msg)
-        )
-            .build();
+    fn build_with_explicit_status() -> R {
+        let built = builder().build();
 
-        assert_eq!(404, built.status);
-        assert_eq!(
-            String::from(msg),
-            built.message
-        );
+        let expected = json!({
+            "status": 404,
+            "message": "generic error"
+        });
+        let actual = serde_json::to_value(built)?;
+        compare(expected, actual)
     }
 
     #[test]
-    fn build_from_error() {
+    fn build_from_error() -> R {
         let error = TestError;
         let built = Terror::from_error(error)
             .build();
 
-        assert_eq!(500, built.status);
-        assert_eq!(
-            String::from("generic error"),
-            built.message
-        )
+        let expected = json!({
+            "status": 500,
+            "message": "generic error"
+        });
+        let actual = serde_json::to_value(built)?;
+        compare(expected, actual)
     }
 
     #[test]
-    fn build_no_short_message_set() {
-        let built = Terror::new(
-            404,
-            String::from("generic error")
-        )
+    fn build_w_shorthand() -> R {
+        let built = builder()
+            .shorthand("generic")
             .build();
 
-        assert!(built.short_message.is_none())
+        let expected = json!({
+            "status": 404,
+            "message": "generic error",
+            "short_message": "generic"
+        });
+        let actual = serde_json::to_value(built)?;
+        compare(expected, actual)
     }
 
     #[test]
-    fn build_short_message_set() {
-        let short_message = "generic";
-        let built = Terror::new(
-            404,
-            String::from("generic error")
-        )
-            .short_message(String::from(short_message))
+    fn build_w_error_code() -> R {
+        let built = builder()
+            .error_code("generic.failure")
             .build();
 
-        assert!(built.short_message.is_some());
-        assert_eq!(
-            String::from(short_message),
-            built.short_message.unwrap()
-        );
+        let expected = json!({
+            "status": 404,
+            "message": "generic error",
+            "error_code": "generic.failure"
+        });
+        let actual = serde_json::to_value(built)?;
+        compare(expected, actual)
     }
 
     #[test]
-    fn build_short_message_shorthand_set() {
-        let short_message = "generic";
-        let built = Terror::new(
-            404,
-            String::from("generic error")
-        )
-            .short_message_str(short_message)
-            .build();
-
-        assert!(built.short_message.is_some());
-        assert_eq!(
-            String::from(short_message),
-            built.short_message.unwrap()
-        );
-    }
-
-    #[test]
-    fn build_no_error_code_set() {
-        let built = Terror::new(
-            404,
-            String::from("generic error")
-        )
-            .build();
-
-        assert!(built.error_code.is_none())
-    }
-
-    #[test]
-    fn build_error_code_set() {
-        let error_code = "generic.failure";
-        let built = Terror::new(
-            404,
-            String::from("generic error")
-        )
-            .error_code(String::from(error_code))
-            .build();
-
-        assert!(built.error_code.is_some());
-        assert_eq!(
-            String::from(error_code),
-            built.error_code.unwrap()
-        );
-    }
-
-    #[test]
-    fn build_error_code_shorthand_set() {
-        let error_code = "generic.failure";
-        let built = Terror::new(
-            404,
-            String::from("generic error")
-        )
-            .error_code_str(error_code)
-            .build();
-
-        assert!(built.error_code.is_some());
-        assert_eq!(
-            String::from(error_code),
-            built.error_code.unwrap()
-        );
-    }
-
-    #[test]
-    fn build_no_reference_set() {
-        let built = Terror::new(
-            404,
-            String::from("generic error")
-        )
-            .build();
-
-        assert!(built.reference.is_none())
-    }
-
-    #[test]
-    fn build_reference_set() {
-        let built = Terror::new(
-            404,
-            String::from("generic error")
-        )
+    fn build_w_reference() -> R {
+        let built = builder()
             .reference()
             .build();
 
-        assert!(built.reference.is_some());
-        assert_eq!(
-            format!("{}/{}", MDN_STATUS_REF, 404),
-            built.reference.unwrap()
-        );
+        let expected = json!({
+            "status": 404,
+            "message": "generic error",
+            "reference": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404"
+        });
+        let actual = serde_json::to_value(built)?;
+        compare(expected, actual)
     }
 
     #[test]
-    fn build_no_details() {
-        let built = Terror::new(
-            404,
-            String::from("generic error")
-        )
+    fn build_w_string_detail() -> R {
+        let built = builder()
+            .add_text_detail("key", "val")
             .build();
 
-        assert!(built.details.is_empty());
+        let expected = json!({
+            "status": 404,
+            "message": "generic error",
+            "details": {
+                "key": "val"
+            }
+        });
+        let actual = serde_json::to_value(built)?;
+        compare(expected, actual)
     }
 
     #[test]
-    fn build_with_string_detail() {
-        let built = Terror::new(
-            404,
-            String::from("generic error")
-        )
-            .add_text_detail(
-                String::from("key"),
-                String::from("val")
-            )
+    fn build_w_number_detail() -> R {
+        let built = builder()
+            .add_int_detail("key", 53i64)
             .build();
 
-        assert!(!built.details.is_empty());
-        assert_eq!(1, built.details.len());
-        assert!(built.details.get("key").is_some());
-        assert_eq!(
-            Value::String(String::from("val")),
-            *built.details.get("key")
-                .unwrap()
-        );
+        let expected = json!({
+            "status": 404,
+            "message": "generic error",
+            "details": {
+                "key": 53
+            }
+        });
+        let actual = serde_json::to_value(built)?;
+        compare(expected, actual)
     }
 
     #[test]
-    fn build_with_number_detail() {
-        let built = Terror::new(
-            404,
-            String::from("generic error")
-        )
-            .add_int_detail(
-                String::from("key"),
-                53i64
-            )
+    fn build_w_bool_detail() -> R {
+        let built = builder()
+            .add_bool_detail("key", true)
             .build();
 
-        assert!(!built.details.is_empty());
-        assert_eq!(1, built.details.len());
-        assert!(built.details.get("key").is_some());
-        assert_eq!(
-            Value::from(53i64),
-            *built.details.get("key")
-                .unwrap()
-        );
+        let expected = json!({
+            "status": 404,
+            "message": "generic error",
+            "details": {
+                "key": true
+            }
+        });
+        let actual = serde_json::to_value(built)?;
+        compare(expected, actual)
     }
 
     #[test]
-    fn build_with_bool_detail() {
-        let built = Terror::new(
-            404,
-            String::from("generic error")
-        )
-            .add_bool_detail(
-                String::from("key"),
-                true
-            )
+    fn build_w_value_detail() -> R {
+        let detail = json!({
+            "id" : 25,
+            "name" : "server"
+        });
+
+        let built = builder()
+            .add_value_detail("key", detail)
             .build();
 
-        assert!(!built.details.is_empty());
-        assert_eq!(1, built.details.len());
-        assert!(built.details.get("key").is_some());
-        assert_eq!(
-            Value::Bool(true),
-            *built.details.get("key")
-                .unwrap()
-        );
+        let expected = json!({
+            "status": 404,
+            "message": "generic error",
+            "details": {
+                "key": {
+                    "id": 25,
+                    "name": "server"
+                }
+            }
+        });
+        let actual = serde_json::to_value(built)?;
+        compare(expected, actual)
     }
 
     #[test]
-    fn build_with_struct_detail() {
-        let built = Terror::new(
-            404,
-            String::from("generic error")
-        )
-            .add_value_detail(
-                String::from("key"),
-                Value::from(json!({
-                    "id" : 25,
-                    "name" : "server"
-                }))
-            )
+    fn build_with_several_details() -> R {
+        let built = builder()
+            .add_text_detail("str", "val")
+            .add_int_detail("num", 53i64)
+            .add_bool_detail("flg", true)
             .build();
 
-        assert!(!built.details.is_empty());
-        assert_eq!(1, built.details.len());
-        assert!(built.details.get("key").is_some());
-    }
+        let expected = json!({
+            "status": 404,
+            "message": "generic error",
+            "details": {
+                "str": "val",
+                "num": 53,
+                "flg": true
+            }
+        });
 
-    #[test]
-    fn build_with_several_details() {
-        let built = Terror::new(
-            404,
-            String::from("generic error")
-        )
-            .add_text_detail(
-                String::from("str"),
-                String::from("val")
-            )
-            .add_int_detail(
-                String::from("num"),
-                53i64
-            )
-            .add_bool_detail(
-                String::from("flg"),
-                true
-            )
-            .build();
-
-
-        assert!(!built.details.is_empty());
-        assert_eq!(3, built.details.len());
-        assert!(built.details.contains_key("str"));
-        assert!(built.details.contains_key("num"));
-        assert!(built.details.contains_key("flg"));
+        let actual = serde_json::to_value(built)?;
+        compare(expected, actual)
     }
 
     #[test]
@@ -693,7 +489,7 @@ mod no_feature_test {
             405,
             String::from("Method not allowed; use GET")
         )
-            .short_message(String::from("Not allowed"))
+            .shorthand(String::from("Not allowed"))
             .error_code(String::from("web.generic"))
             .add_text_detail(
                 String::from("got"),
@@ -745,6 +541,22 @@ mod no_feature_test {
 
     impl Error for TestError {}
 
+    fn compare(expected: Value, mut actual: Value) -> R {
+
+        #[cfg(feature = "time")]
+        actual.as_object_mut().unwrap().remove("timestamp");
+
+        #[cfg(feature = "err_id")]
+        actual.as_object_mut().unwrap().remove("id");
+
+        assert_eq!(expected, actual);
+        Ok(())
+    }
+
+    fn builder() -> Builder {
+        Terror::new(404, "generic error")
+    }
+
 }
 
 #[cfg(all(test, feature = "err_id", feature = "time"))]
@@ -754,35 +566,66 @@ mod with_features_test {
     use std::fmt::Formatter;
     use std::str::FromStr;
     use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
-    use serde_json::json;
+    use serde_json::{json, Value};
     use uuid::Uuid;
-    use crate::{Terror};
+    use crate::{Builder, Terror};
+
+    type R = anyhow::Result<()>;
 
     #[test]
-    fn build_with_explicit_status() {
-        let built = Terror::new(
-            404,
-            String::from("generic error")
-        );
+    fn build_w_explicit_status() -> R {
+        let mut built = builder().build();
+
+        let now = Utc::now();
 
         assert_eq!(4, built.id.get_version_num());
         assert_eq!(
-            Utc::now().date(),
-            built.timestamp.date()
-        )
+            now.date_naive(),
+            built.timestamp.date_naive()
+        );
+
+        // overwrite to check json values
+        let uuid = Uuid::new_v4();
+        built.id = uuid;
+        built.timestamp = now;
+
+        let expected = json!({
+            "status": 404,
+            "message": "generic error",
+            "id": uuid,
+            "timestamp": now
+        });
+        let actual = serde_json::to_value(built)?;
+        compare(expected, actual)
     }
 
     #[test]
-    fn build_from_error() {
+    fn build_from_error() -> R {
         let error = TestError;
-        let built = Terror::from_error(error)
+        let mut built = Terror::from_error(error)
             .build();
+
+        let now = Utc::now();
 
         assert_eq!(4, built.id.get_version_num());
         assert_eq!(
-            Utc::now().date(),
-            built.timestamp.date()
-        )
+            now.date_naive(),
+            built.timestamp.date_naive()
+        );
+
+        // overwrite to check json values
+        let uuid = Uuid::new_v4();
+        built.id = uuid;
+        built.timestamp = now;
+
+        let expected = json!({
+            "status": 500,
+            "message": "generic error",
+            "id": uuid,
+            "timestamp": now
+        });
+        let actual = serde_json::to_value(built)?;
+        compare(expected, actual)
     }
 
     #[test]
@@ -805,10 +648,10 @@ mod with_features_test {
 
         expected.id = Uuid::from_str("2d10a950-d6f4-11ec-ab97-00155d887325")
             .unwrap();
-        expected.timestamp = DateTime::from_utc(
+        expected.timestamp = DateTime::from_naive_utc_and_offset(
             NaiveDateTime::new(
-                NaiveDate::from_ymd(2022, 1, 1),
-                NaiveTime::from_hms(21, 0, 0)
+                NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
+                NaiveTime::from_hms_opt(21, 0, 0).unwrap()
             ),
             Utc
         );
@@ -826,5 +669,14 @@ mod with_features_test {
     }
 
     impl Error for TestError {}
+
+    fn compare(expected: Value, actual: Value) -> R {
+        assert_eq!(expected, actual);
+        Ok(())
+    }
+
+    fn builder() -> Builder {
+        Terror::new(404, "generic error")
+    }
 
 }
