@@ -7,7 +7,7 @@
 To enable `terror`, simply add it to your `Cargo.toml`:
 
 ```toml
-terror = "0.1.4"
+terror = "1.1.4"
 ```
 
 And then start hacking in the code:
