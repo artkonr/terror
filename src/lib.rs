@@ -256,8 +256,8 @@ impl Builder {
               S: Serialize + Debug
     {
         let into: String = name.into();
-        let value = serde_json::to_value(obj)
-            .expect(format!("failed to serialise: {:?}", obj).as_str());
+        let value = serde_json::to_value(&obj)
+            .expect(format!("failed to serialise: {:?}", &obj).as_str());
         self.details.insert(into, value);
         self
     }
@@ -273,6 +273,8 @@ impl Builder {
             short_message: self.short_message.clone(),
             error_code: self.error_code.clone(),
             details: self.details,
+
+            #[cfg(feature = "mdn")]
             reference: self.reference.clone(),
 
             #[cfg(feature = "time")]
@@ -285,6 +287,7 @@ impl Builder {
 
 }
 
+#[cfg(feature = "mdn")]
 const MDN_STATUS_REF: &str = "https://developer.mozilla.org/en-US/docs/Web/HTTP/Status";
 
 #[cfg(test)]
@@ -348,21 +351,6 @@ mod no_feature_test {
             "status": 404,
             "message": "generic error",
             "error_code": "generic.failure"
-        });
-        let actual = serde_json::to_value(built)?;
-        compare(expected, actual)
-    }
-
-    #[test]
-    fn build_w_reference() -> R {
-        let built = builder()
-            .reference()
-            .build();
-
-        let expected = json!({
-            "status": 404,
-            "message": "generic error",
-            "reference": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404"
         });
         let actual = serde_json::to_value(built)?;
         compare(expected, actual)
@@ -469,6 +457,7 @@ mod no_feature_test {
     #[test]
     #[cfg(not(feature = "err_id"))]
     #[cfg(not(feature = "time"))]
+    #[cfg(not(feature = "mdn"))]
     fn deserialize_all_fields() {
         let inbound = json!({
             "status" : 405u16,
@@ -479,7 +468,6 @@ mod no_feature_test {
                 "allowed" : [ "GET" ],
                 "got" : "OPTIONS"
             },
-            "reference" : format!("{}/{}", MDN_STATUS_REF, 405)
         });
 
         let as_struct = serde_json::from_value(inbound);
@@ -501,7 +489,6 @@ mod no_feature_test {
                     Value::String(String::from("GET"))
                 ])
             )
-            .reference()
             .build();
 
         assert_eq!(expected, as_struct.unwrap());
@@ -510,6 +497,7 @@ mod no_feature_test {
     #[test]
     #[cfg(not(feature = "err_id"))]
     #[cfg(not(feature = "time"))]
+    #[cfg(not(feature = "mdn"))]
     fn deserialize_some_fields() {
         let inbound = json!({
             "status" : 405u16,
@@ -549,6 +537,9 @@ mod no_feature_test {
         #[cfg(feature = "err_id")]
         actual.as_object_mut().unwrap().remove("id");
 
+        #[cfg(feature = "mdn")]
+        actual.as_object_mut().unwrap().remove("reference");
+
         assert_eq!(expected, actual);
         Ok(())
     }
@@ -559,7 +550,7 @@ mod no_feature_test {
 
 }
 
-#[cfg(all(test, feature = "err_id", feature = "time"))]
+#[cfg(all(test, feature = "err_id", feature = "time", feature = "mdn"))]
 mod with_features_test {
     use std::error::Error;
     use std::fmt;
@@ -593,7 +584,8 @@ mod with_features_test {
             "status": 404,
             "message": "generic error",
             "id": uuid,
-            "timestamp": now
+            "timestamp": now,
+            "reference": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404"
         });
         let actual = serde_json::to_value(built)?;
         compare(expected, actual)
@@ -622,7 +614,29 @@ mod with_features_test {
             "status": 500,
             "message": "generic error",
             "id": uuid,
-            "timestamp": now
+            "timestamp": now,
+            "reference": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+        });
+        let actual = serde_json::to_value(built)?;
+        compare(expected, actual)
+    }
+
+    #[test]
+    fn build_w_reference() -> R {
+        let mut built = builder().build();
+
+        // overwrite to check json values
+        let now = Utc::now();
+        let uuid = Uuid::new_v4();
+        built.id = uuid;
+        built.timestamp = now;
+
+        let expected = json!({
+            "status": 404,
+            "message": "generic error",
+            "id": uuid,
+            "timestamp": now,
+            "reference": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404"
         });
         let actual = serde_json::to_value(built)?;
         compare(expected, actual)
@@ -634,16 +648,14 @@ mod with_features_test {
             "status" : 405u16,
             "message" : "Method not allowed; use GET",
             "id" : "2d10a950-d6f4-11ec-ab97-00155d887325",
-            "timestamp" : "2022-01-01T21:00:00Z"
+            "timestamp" : "2022-01-01T21:00:00Z",
+            "reference": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/405"
         });
 
         let as_struct = serde_json::from_value(inbound);
         assert!(as_struct.is_ok());
 
-        let mut expected = Terror::new(
-            405,
-            String::from("Method not allowed; use GET")
-        )
+        let mut expected = Terror::new(405,"Method not allowed; use GET")
             .build();
 
         expected.id = Uuid::from_str("2d10a950-d6f4-11ec-ab97-00155d887325")
