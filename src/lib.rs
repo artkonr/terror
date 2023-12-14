@@ -6,7 +6,7 @@ use serde_derive::{Serialize, Deserialize};
 
 #[cfg(feature = "time")]
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::Serialize as Serializable;
 use serde_json::{Number, Value};
 #[cfg(feature = "err_id")]
 use uuid::Uuid;
@@ -253,7 +253,7 @@ impl Builder {
                                    name: K,
                                    obj: S) -> Builder
         where K: Into<String>,
-              S: Serialize + Debug
+              S: Serializable + Debug
     {
         let into: String = name.into();
         let value = serde_json::to_value(&obj)
@@ -295,6 +295,7 @@ mod no_feature_test {
     use std::error::Error;
     use std::fmt;
     use std::fmt::Formatter;
+    use serde_derive::Serialize;
     use serde_json::{json, Value};
     use crate::{Builder, Terror};
 
@@ -433,7 +434,72 @@ mod no_feature_test {
     }
 
     #[test]
-    fn build_with_several_details() -> R {
+    fn build_w_struct_detail() -> R {
+        #[derive(Serialize, Debug)]
+        struct Server {
+            id: i32,
+            name: String
+        }
+
+        let detail = Server { id: 25, name: String::from("server") };
+
+        let built = builder()
+            .add_struct_detail("key", detail)
+            .build();
+
+        let expected = json!({
+            "status": 404,
+            "message": "generic error",
+            "details": {
+                "key": {
+                    "id": 25,
+                    "name": "server"
+                }
+            }
+        });
+        let actual = serde_json::to_value(built)?;
+        compare(expected, actual)
+    }
+
+    #[test]
+    fn build_w_list_struct_detail() -> R {
+        #[derive(Serialize, Debug)]
+        struct Server {
+            id: i32,
+            name: String
+        }
+
+        let detail = vec![
+            Server { id: 25, name: String::from("server-1") },
+            Server { id: 27, name: String::from("server-2") }
+        ];
+
+        let built = builder()
+            .add_struct_detail("key", detail)
+            .build();
+
+        let expected = json!({
+            "status": 404,
+            "message": "generic error",
+            "details": {
+                "key": [
+                    {
+                        "id": 25,
+                        "name": "server-1"
+                    },
+                    {
+                        "id": 27,
+                        "name": "server-2"
+                    }
+                ]
+            }
+        });
+        let actual = serde_json::to_value(built)?;
+        compare(expected, actual)
+    }
+
+    #[test]
+    fn build_w_several_details() -> R {
         let built = builder()
             .add_text_detail("str", "val")
             .add_int_detail("num", 53i64)
