@@ -11,13 +11,9 @@ on:
           - "patch"
           - "minor"
           - "major"
-      branch:
-        description: "Branch to release from"
-        type: string
-        required: false
-        default: main
 
 jobs:
+  # release flow: main -> release-X -> release from release-x -> PR release-X => main
   release:
     runs-on: ubuntu-latest
     steps:
@@ -25,7 +21,7 @@ jobs:
         name: Checkout
         uses: actions/checkout@v3
         with:
-          ref: "${{ github.event.inputs.branch }}"
+          ref: "main"
 
       - id: test
         name: "Pre-release build"
@@ -75,6 +71,9 @@ jobs:
           
           echo "> New version: $NEW"
           
+          # create release branch
+          git checkout -b "release"
+          
           # update Cargo.toml
           sed -i "s/^version = \"$CURRENT\"/version = \"$NEW\"/g" Cargo.toml
           
@@ -83,7 +82,7 @@ jobs:
           
           git add .
           git commit -m "version update: $CURRENT > $NEW"
-          git push
+          git push -u origin "release"
 
           git tag -a "$NEW" -m "version update: $CURRENT > $NEW"
           git push --tags
