@@ -59,10 +59,13 @@ jobs:
             ;;
           
             "minor")
+              PATCH="0"
               MINOR=$(($MINOR + 1))
             ;;
           
             "major")
+              PATCH="0"
+              MINOR="0"
               MAJOR=$(($MAJOR + 1))
             ;;
           esac
@@ -76,6 +79,9 @@ jobs:
           
           # update Cargo.toml
           sed -i "s/^version = \"$CURRENT\"/version = \"$NEW\"/g" Cargo.toml
+          
+          # update Cargo.lock
+          cargo generate-lockfile
           
           # update in README.md
           sed -i "s/terror = \"$CURRENT\"/terror = \"$NEW\"/g" README.md
