@@ -90,6 +90,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "httpstatus"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cbcf281a2062fc93deb46c99bd072cda6888a560c8a4f223d6824c1128832002"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "iana-time-zone"
 version = "0.1.63"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -253,6 +262,7 @@ version = "3.0.2"
 dependencies = [
  "anyhow",
  "chrono",
+ "httpstatus",
  "serde",
  "serde_derive",
  "serde_json",
