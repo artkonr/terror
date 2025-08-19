@@ -6,6 +6,8 @@ use serde_derive::{Serialize, Deserialize};
 
 #[cfg(feature = "time")]
 use chrono::{DateTime, Utc};
+#[cfg(feature = "infer_http")]
+use httpstatus::StatusCode;
 use serde::Serialize as Serializable;
 use serde_json::{Number, Value};
 #[cfg(feature = "err_id")]
@@ -33,8 +35,12 @@ use uuid::Uuid;
 /// If feature `time` is enabled, also reports
 /// the present timestamp the object was created at.
 ///
-/// if feature `err_id` is enabled, also assigns
+/// If feature `err_id` is enabled, also assigns
 /// a UUID to the error body.
+///
+/// If feature `infer_http` is enabled, also automatically
+/// sets `short_message` based on the status code, unless
+/// specifically overwritten in the [builder](Builder).
 ///
 /// ### Building
 ///
@@ -115,12 +121,19 @@ impl Terror {
     /// let built = Terror::new(429, "some error")
     ///     .build();
     /// ```
-    pub fn new<K: Into<String>>(status: u16, msg: K) -> Builder {
-        let into: String = msg.into();
+    pub fn new<K: Into<String>>(status: u16, message: K) -> Builder {
+        let message: String = message.into();
+        #[cfg(feature = "infer_http")]
+        let shorthand = {
+            let status: StatusCode = status.into();
+            Some(format!("{}", status))
+        };
+        #[cfg(not(feature = "infer_http"))]
+        let shorthand = None;
         Builder {
             status,
-            message: into,
-            short_message: None,
+            message,
+            short_message: shorthand,
             error_code: None,
             details: HashMap::new(),
 
@@ -339,7 +352,7 @@ mod no_feature_test {
             "short_message": "generic"
         });
         let actual = serde_json::to_value(built)?;
-        compare(expected, actual)
+        compare_respecting_manually_set_fields(expected, actual)
     }
 
     #[test]
@@ -606,6 +619,24 @@ mod no_feature_test {
         #[cfg(feature = "mdn")]
         actual.as_object_mut().unwrap().remove("reference");
 
+        #[cfg(feature = "infer_http")]
+        actual.as_object_mut().unwrap().remove("short_message");
+
+        assert_eq!(expected, actual);
+        Ok(())
+    }
+
+    fn compare_respecting_manually_set_fields(expected: Value, mut actual: Value) -> R {
+
+        #[cfg(feature = "time")]
+        actual.as_object_mut().unwrap().remove("timestamp");
+
+        #[cfg(feature = "err_id")]
+        actual.as_object_mut().unwrap().remove("id");
+
+        #[cfg(feature = "mdn")]
+        actual.as_object_mut().unwrap().remove("reference");
+
         assert_eq!(expected, actual);
         Ok(())
     }
@@ -616,7 +647,7 @@ mod no_feature_test {
 
 }
 
-#[cfg(all(test, feature = "err_id", feature = "time", feature = "mdn"))]
+#[cfg(all(test, feature = "err_id", feature = "time", feature = "mdn", feature = "infer_http"))]
 mod with_features_test {
     use std::error::Error;
     use std::fmt;
@@ -651,7 +682,8 @@ mod with_features_test {
             "message": "generic error",
             "id": uuid,
             "timestamp": now,
-            "reference": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404"
+            "reference": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
+            "short_message": "404 Not Found"
         });
         let actual = serde_json::to_value(built)?;
         compare(expected, actual)
@@ -681,7 +713,8 @@ mod with_features_test {
             "message": "generic error",
             "id": uuid,
             "timestamp": now,
-            "reference": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+            "reference": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500",
+            "short_message": "500 Internal Server Error"
         });
         let actual = serde_json::to_value(built)?;
         compare(expected, actual)
@@ -702,7 +735,8 @@ mod with_features_test {
             "message": "generic error",
             "id": uuid,
             "timestamp": now,
-            "reference": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404"
+            "reference": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
+            "short_message": "404 Not Found"
         });
         let actual = serde_json::to_value(built)?;
         compare(expected, actual)
@@ -715,7 +749,8 @@ mod with_features_test {
             "message" : "Method not allowed; use GET",
             "id" : "2d10a950-d6f4-11ec-ab97-00155d887325",
             "timestamp" : "2022-01-01T21:00:00Z",
-            "reference": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/405"
+            "reference": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/405",
+            "short_message": "405 Method Not Allowed"
         });
 
         let as_struct = serde_json::from_value(inbound);
