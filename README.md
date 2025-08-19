@@ -7,7 +7,7 @@
 To enable `terror`, simply add it to your `Cargo.toml`:
 
 ```toml
-terror = "3.0.0"
+terror = "3.0.1"
 ```
 
 And then start hacking in the code:
@@ -30,7 +30,7 @@ fn main() {
 
 ## Architecture
 
-`terror` is built with Rust 1.60.
+`terror` is built with Rust 1.70.
 
 It's a general intention of `terror` to be serialized into JSON. Therefore, it's designed to be compatible with 
 `serde`. As for the rest, `terror` tries to enforce as little dependencies as possible.
